@@ -242,7 +242,28 @@ async def main():
                     result = event["result"]
                     success = result.get("success", False)
                     status = f"{GREEN}✓{RESET}" if success else f"{RED}✗{RESET}"
+                    
+                    # 显示工具完成状态
                     print(f"{DIM}    {status} {tool_name} done{RESET}")
+                    
+                    # 如果是 edit_file 且有 diff 信息，显示变更摘要
+                    if tool_name == "edit_file" and success and "diff" in result:
+                        diff_info = result["diff"]
+                        old_len = diff_info.get("old_length", 0)
+                        new_len = diff_info.get("new_length", 0)
+                        
+                        # 显示变更统计
+                        if old_len != new_len:
+                            delta = new_len - old_len
+                            delta_str = f"+{delta}" if delta > 0 else str(delta)
+                            print(f"{DIM}    📝 {old_len} → {new_len} chars ({delta_str}){RESET}")
+                        else:
+                            print(f"{DIM}    📝 {old_len} chars (no size change){RESET}")
+                        
+                        # 如果是预览模式，显示提示
+                        if result.get("preview"):
+                            print(f"{YELLOW}    ⚠ PREVIEW MODE - File not modified{RESET}")
+                    
                     sys.stdout.flush()
 
                 elif event["type"] == "reasoning":

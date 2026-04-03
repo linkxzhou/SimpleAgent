@@ -103,7 +103,12 @@ class Agent:
         elif name == "write_file":
             return self.tools.write_file(args["path"], args["content"])
         elif name == "edit_file":
-            return self.tools.edit_file(args["path"], args["old_content"], args["new_content"])
+            return self.tools.edit_file(
+                args["path"], 
+                args["old_content"], 
+                args["new_content"],
+                args.get("preview", False)
+            )
         elif name == "list_files":
             return self.tools.list_files(args.get("path", "."))
         elif name == "execute_command":

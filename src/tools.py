@@ -33,8 +33,15 @@ class ToolExecutor:
             return {"success": False, "error": str(e), "path": path}
 
     @staticmethod
-    def edit_file(path: str, old_content: str, new_content: str) -> Dict[str, Any]:
-        """编辑文件内容（仅替换第一个匹配）"""
+    def edit_file(path: str, old_content: str, new_content: str, preview: bool = False) -> Dict[str, Any]:
+        """编辑文件内容（仅替换第一个匹配）
+        
+        Args:
+            path: 文件路径
+            old_content: 要替换的旧内容
+            new_content: 新内容
+            preview: 是否仅预览而不写入文件
+        """
         try:
             with open(path, 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -44,11 +51,29 @@ class ToolExecutor:
 
             # 只替换第一个匹配，避免全局替换导致的数据泄漏
             new_content_full = content.replace(old_content, new_content, 1)
-
+            
+            # 生成 diff 信息（显示变更的上下文）
+            diff_info = {
+                "old_content": old_content,
+                "new_content": new_content,
+                "old_length": len(old_content),
+                "new_length": len(new_content),
+            }
+            
+            # 预览模式：不写入文件，返回 diff
+            if preview:
+                return {
+                    "success": True,
+                    "path": path,
+                    "preview": True,
+                    "diff": diff_info
+                }
+            
+            # 实际写入文件
             with open(path, 'w', encoding='utf-8') as f:
                 f.write(new_content_full)
 
-            return {"success": True, "path": path}
+            return {"success": True, "path": path, "diff": diff_info}
         except Exception as e:
             return {"success": False, "error": str(e), "path": path}
 
@@ -184,6 +209,11 @@ TOOL_DEFINITIONS = [
                     "new_content": {
                         "type": "string",
                         "description": "替换后的新内容"
+                    },
+                    "preview": {
+                        "type": "boolean",
+                        "description": "是否仅预览而不写入文件（默认 false）",
+                        "default": False
                     }
                 },
                 "required": ["path", "old_content", "new_content"]
