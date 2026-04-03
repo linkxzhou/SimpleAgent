@@ -10,6 +10,7 @@ Usage:
   OPENAI_MODEL=Pro/zai-org/GLM-5 python src/main.py
   python src/main.py --model Pro/zai-org/GLM-5
   python src/main.py --skills ./skills
+  python src/main.py --system "Custom system prompt"
   python src/main.py --version
 
 Commands:
@@ -108,6 +109,11 @@ For more information: https://github.com/linkxzhou/SimpleAgent
         action='store_true',
         help='Show version and exit'
     )
+    parser.add_argument(
+        '--system',
+        metavar='PROMPT',
+        help='Custom system prompt (overrides default)'
+    )
 
     return parser.parse_args()
 
@@ -140,6 +146,10 @@ async def main():
     agent = Agent(api_key, args.model, base_url=base_url)
     agent.with_skills(skills)
     agent.with_tools(default_tools())
+    
+    # 应用自定义系统提示词
+    if args.system:
+        agent.with_system_prompt(args.system)
 
     print_banner()
     print(f"{DIM}  model: {args.model}{RESET}")
