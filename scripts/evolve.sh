@@ -7,7 +7,7 @@
 # 环境变量：
 #   OPENAI_API_KEY     — 必需
 #   REPO               — Git 仓库地址（默认: git@github.com:linkxzhou/SimpleAgent.git）
-#   MODEL              — LLM 模型（默认: claude-opus-4.6）
+#   MODEL              — LLM 模型（默认: Pro/zai-org/GLM-5）
 #   TIMEOUT            — 最大会话时间，单位秒（默认: 6000）
 
 set -euo pipefail
@@ -24,17 +24,17 @@ fi
 
 # 从 .env 文件读取配置（如果存在）
 if [ -f ".env" ]; then
-    # 读取 OPENAI_MODEL
+    # 读取 OPENAI_MODEL（去除行内注释和首尾空白）
     if grep -q "^OPENAI_MODEL=" .env; then
-        ENV_MODEL=$(grep "^OPENAI_MODEL=" .env | cut -d '=' -f2-)
+        ENV_MODEL=$(grep "^OPENAI_MODEL=" .env | cut -d '=' -f2- | sed 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*$//')
         if [ -n "$ENV_MODEL" ]; then
             MODEL="$ENV_MODEL"
         fi
     fi
     
-    # 读取 git 仓库地址（如果有 REPO 配置）
+    # 读取 git 仓库地址（去除行内注释和首尾空白）
     if grep -q "^REPO=" .env; then
-        ENV_REPO=$(grep "^REPO=" .env | cut -d '=' -f2-)
+        ENV_REPO=$(grep "^REPO=" .env | cut -d '=' -f2- | sed 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*$//')
         if [ -n "$ENV_REPO" ]; then
             REPO="$ENV_REPO"
         fi
@@ -43,6 +43,7 @@ fi
 
 # 设置默认值（如果环境变量或 .env 文件中没有设置）
 REPO="${REPO:-git@github.com:linkxzhou/SimpleAgent.git}"
+MODEL="${MODEL:-Pro/zai-org/GLM-5}"
 TIMEOUT="${TIMEOUT:-6000}"
 HOUR=$(cat RUN_COUNT 2>/dev/null || echo 1)
 DATE=$(date +"%Y-%m-%d %H:00")
