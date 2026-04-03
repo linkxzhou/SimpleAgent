@@ -108,7 +108,7 @@ SimpleAgent/
 ## 克隆项目
 
 ```bash
-git clone git@git.woa.com:linkxzhou/SimpleAgent.git
+git clone git@github.com:linkxzhou/SimpleAgent.git
 cd SimpleAgent
 ```
 
