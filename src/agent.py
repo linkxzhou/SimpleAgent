@@ -28,6 +28,7 @@ class Agent:
         self.tools: ToolExecutor = ToolExecutor()
         self.tool_definitions = TOOL_DEFINITIONS
         self.session_usage = Usage()  # 会话累计 token 用量
+        self.file_history: List[Dict[str, Any]] = []  # 文件操作历史（用于撤销）
         self.refresh_system_prompt()
 
     def refresh_system_prompt(self) -> 'Agent':
@@ -101,8 +102,13 @@ class Agent:
         if name == "read_file":
             return self.tools.read_file(args["path"])
         elif name == "write_file":
+            # 保存文件历史（用于撤销）
+            self._save_file_history(args["path"])
             return self.tools.write_file(args["path"], args["content"])
         elif name == "edit_file":
+            # 保存文件历史（用于撤销）
+            if not args.get("preview", False):  # 预览模式不需要保存历史
+                self._save_file_history(args["path"])
             return self.tools.edit_file(
                 args["path"], 
                 args["old_content"], 
@@ -117,6 +123,57 @@ class Agent:
             return self.tools.search_files(args["pattern"], args.get("path", "."))
         else:
             return {"success": False, "error": f"Unknown tool: {name}"}
+    
+    def _save_file_history(self, path: str):
+        """保存文件当前内容到历史记录"""
+        import os
+        if os.path.exists(path):
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                self.file_history.append({
+                    "path": path,
+                    "content": content,
+                    "timestamp": __import__('time').time()
+                })
+            except Exception:
+                pass  # 如果读取失败，不保存历史
+    
+    def undo_last_file_change(self) -> Dict[str, Any]:
+        """撤销上一次文件更改"""
+        import os
+        
+        if not self.file_history:
+            return {
+                "success": False,
+                "error": "没有可撤销的文件操作",
+                "hint": "文件操作历史为空"
+            }
+        
+        # 获取最后一次操作
+        last_change = self.file_history.pop()
+        path = last_change["path"]
+        content = last_change["content"]
+        
+        try:
+            # 恢复文件内容
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            
+            return {
+                "success": True,
+                "path": path,
+                "message": f"已撤销文件 {path} 的更改",
+                "restored_size": len(content)
+            }
+        except Exception as e:
+            # 恢复失败，把历史放回去
+            self.file_history.append(last_change)
+            return {
+                "success": False,
+                "error": f"撤销失败: {str(e)}",
+                "path": path
+            }
 
     @staticmethod
     def _detect_fake_tool_calls(content: str) -> bool:

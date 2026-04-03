@@ -17,6 +17,7 @@ Commands:
   /quit, /exit    Exit the agent
   /clear          Clear conversation history
   /stats          Show session usage statistics
+  /undo           Undo last file change
   /model <name>   Switch model mid-session
 """
 
@@ -88,6 +89,7 @@ Interactive Commands:
   /quit, /exit    Exit the agent
   /clear          Clear conversation history
   /stats          Show session usage statistics
+  /undo           Undo last file change
   /model <name>   Switch model mid-session
 
 For more information: https://github.com/linkxzhou/SimpleAgent
@@ -192,6 +194,17 @@ async def main():
                     print(f"{DIM}    Total tokens:  {agent.session_usage.input + agent.session_usage.output}{RESET}\n")
                 else:
                     print(f"{DIM}  (no usage data yet){RESET}\n")
+                continue
+            elif user_input == '/undo':
+                # 撤销上一次文件更改
+                result = agent.undo_last_file_change()
+                if result["success"]:
+                    print(f"{GREEN}  ✓ {result['message']}{RESET}")
+                    print(f"{DIM}    Restored {result['restored_size']} chars{RESET}\n")
+                else:
+                    print(f"{RED}  ✗ {result['error']}{RESET}")
+                    if 'hint' in result:
+                        print(f"{DIM}    {result['hint']}{RESET}\n")
                 continue
             elif user_input.startswith('/model '):
                 new_model = user_input[7:].strip()
