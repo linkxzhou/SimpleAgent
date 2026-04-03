@@ -10,6 +10,7 @@ from openai import OpenAI
 from .models import Usage, SkillSet, ToolCallRequest, LLMResponse
 from .tools import ToolExecutor, TOOL_DEFINITIONS
 from .prompt import build_system_prompt
+from .exceptions import classify_exception, format_error_message, SimpleAgentException
 
 
 class Agent:
@@ -158,7 +159,13 @@ class Agent:
                     tool_choice="auto",
                 )
             except Exception as e:
-                yield {"type": "error", "message": str(e)}
+                # 使用统一异常分类系统处理 API 错误
+                classified = classify_exception(e)
+                yield {
+                    "type": "error",
+                    "message": format_error_message(classified),
+                    "recoverable": classified.recoverable
+                }
                 return
 
             # 解析响应

@@ -6,6 +6,10 @@ import pytest
 from src.exceptions import (
     SimpleAgentException,
     APIError,
+    AuthenticationError,
+    RateLimitError,
+    NetworkError,
+    ModelNotFoundError,
     ToolError,
     SystemError,
     classify_exception,
@@ -24,11 +28,42 @@ class TestExceptionClasses:
         assert exc.suggestion == "测试建议"
 
     def test_api_error(self):
-        """测试 API 错误"""
+        """测试 API 错误基类"""
         exc = APIError("API 调用失败")
         assert exc.message == "API 调用失败"
         assert exc.recoverable is True
         assert "API" in exc.suggestion
+        assert hasattr(exc, 'retry_after')
+
+    def test_authentication_error(self):
+        """测试 API 认证错误"""
+        exc = AuthenticationError()
+        assert "认证失败" in exc.message
+        assert exc.recoverable is True
+        assert exc.retry_after is None
+        assert "OPENAI_API_KEY" in exc.suggestion
+
+    def test_rate_limit_error(self):
+        """测试速率限制错误"""
+        exc = RateLimitError()
+        assert "频率超限" in exc.message
+        assert exc.recoverable is True
+        assert exc.retry_after == 60
+        assert "60" in exc.suggestion
+
+    def test_network_error(self):
+        """测试网络错误"""
+        exc = NetworkError()
+        assert "网络" in exc.message
+        assert exc.recoverable is True
+        assert exc.retry_after == 5
+
+    def test_model_not_found_error(self):
+        """测试模型不存在错误"""
+        exc = ModelNotFoundError("test-model")
+        assert "test-model" in exc.message
+        assert exc.recoverable is True
+        assert exc.retry_after is None
 
     def test_tool_error(self):
         """测试工具错误"""

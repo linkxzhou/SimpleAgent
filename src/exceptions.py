@@ -16,13 +16,61 @@ class SimpleAgentException(Exception):
 
 
 class APIError(SimpleAgentException):
-    """API 相关错误"""
+    """API 相关错误（基类）"""
     
-    def __init__(self, message: str, suggestion: Optional[str] = None):
+    def __init__(self, message: str, suggestion: Optional[str] = None, retry_after: Optional[int] = None):
+        self.retry_after = retry_after  # 建议重试等待秒数
         super().__init__(
             message=message,
-            recoverable=True,  # API 错误通常可以恢复
+            recoverable=True,
             suggestion=suggestion or "请检查网络连接和 API 配置，然后重试"
+        )
+
+
+class AuthenticationError(APIError):
+    """API 认证失败（密钥错误或无效）"""
+    
+    def __init__(self, message: str = "API 认证失败", suggestion: Optional[str] = None):
+        super().__init__(
+            message=message,
+            suggestion=suggestion or "请检查 OPENAI_API_KEY 环境变量是否正确设置",
+            retry_after=None
+        )
+
+
+class RateLimitError(APIError):
+    """API 调用频率超限"""
+    
+    def __init__(self, message: str = "API 调用频率超限", retry_after: Optional[int] = 60):
+        super().__init__(
+            message=message,
+            suggestion=f"请等待 {retry_after} 秒后重试，或检查您的 API 配额",
+            retry_after=retry_after
+        )
+
+
+class NetworkError(APIError):
+    """网络连接失败"""
+    
+    def __init__(self, message: str = "网络连接失败", suggestion: Optional[str] = None):
+        super().__init__(
+            message=message,
+            suggestion=suggestion or "请检查网络连接，确认 API 地址可访问",
+            retry_after=5
+        )
+
+
+class ModelNotFoundError(APIError):
+    """模型不可用"""
+    
+    def __init__(self, model_name: Optional[str] = None):
+        msg = "模型不可用"
+        if model_name:
+            msg = f"模型 '{model_name}' 不可用"
+        super().__init__(
+            message=msg,
+            suggestion="请检查模型名称是否正确，或使用 --model 参数切换模型",
+            retry_after=None
         )
 
 
@@ -49,34 +97,69 @@ class SystemError(SimpleAgentException):
 
 
 def classify_exception(e: Exception) -> SimpleAgentException:
-    """将原始异常分类为 SimpleAgent 异常"""
+    """将原始异常分类为 SimpleAgent 异常
     
-    # OpenAI API 相关异常
+    优先识别 OpenAI 官方异常类型，其次根据错误字符串进行匹配。
+    """
+    
+    # 尝试导入 OpenAI 异常类型
+    try:
+        from openai import (
+            AuthenticationError as OpenAIAuthError,
+            RateLimitError as OpenAIRateLimitError,
+            APIConnectionError,
+            APITimeoutError,
+            NotFoundError,
+            BadRequestError,
+        )
+        
+        # 优先匹配 OpenAI 异常类型（最精确）
+        if isinstance(e, OpenAIAuthError):
+            return AuthenticationError("API 认证失败")
+        
+        if isinstance(e, OpenAIRateLimitError):
+            return RateLimitError("API 调用频率超限", retry_after=60)
+        
+        if isinstance(e, APIConnectionError):
+            return NetworkError("无法连接到 API 服务器")
+        
+        if isinstance(e, APITimeoutError):
+            return NetworkError("API 请求超时", suggestion="请检查网络连接或稍后重试")
+        
+        if isinstance(e, NotFoundError):
+            # 可能是模型不存在或端点不存在
+            error_str = str(e).lower()
+            if "model" in error_str:
+                return ModelNotFoundError()
+            return APIError("API 资源不存在", suggestion="请检查 API 端点配置")
+        
+        if isinstance(e, BadRequestError):
+            error_str = str(e).lower()
+            if "model" in error_str:
+                return ModelNotFoundError()
+            return APIError("请求参数错误", suggestion="请检查请求参数是否正确")
+            
+    except ImportError:
+        # OpenAI 库未安装或版本不支持，降级到字符串匹配
+        pass
+    
+    # 降级：基于错误字符串的模糊匹配
     error_str = str(e).lower()
     
     if "authentication" in error_str or "api key" in error_str or "unauthorized" in error_str:
-        return APIError(
-            "API 认证失败",
-            "请检查 OPENAI_API_KEY 环境变量是否正确设置"
-        )
+        return AuthenticationError("API 认证失败")
     
     if "rate limit" in error_str or "quota" in error_str:
-        return APIError(
-            "API 调用频率超限",
-            "请等待几分钟后重试，或检查您的 API 配额"
-        )
+        return RateLimitError("API 调用频率超限", retry_after=60)
     
     if "network" in error_str or "connection" in error_str or "timeout" in error_str:
-        return APIError(
-            "网络连接失败",
-            "请检查网络连接，确认 API 地址可访问"
-        )
+        return NetworkError("网络连接失败")
     
-    if "model" in error_str or "not found" in error_str:
-        return APIError(
-            "模型不可用",
-            "请检查模型名称是否正确，或切换到其他模型"
-        )
+    if "model" in error_str and ("not found" in error_str or "does not exist" in error_str):
+        import re
+        match = re.search(r"model\s+['\"]?([^'\"\s]+)['\"]?\s+(not found|does not exist)", error_str)
+        model_name = match.group(1) if match else None
+        return ModelNotFoundError(model_name)
     
     # 文件操作相关异常
     if "filenotfounderror" in type(e).__name__.lower() or "no such file" in error_str:
