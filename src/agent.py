@@ -27,6 +27,7 @@ class Agent:
         self.skills = SkillSet()
         self.tools: ToolExecutor = ToolExecutor()
         self.tool_definitions = TOOL_DEFINITIONS
+        self.session_usage = Usage()  # 会话累计 token 用量
         self.refresh_system_prompt()
 
     def refresh_system_prompt(self) -> 'Agent':
@@ -205,7 +206,10 @@ class Agent:
                     "role": "assistant",
                     "content": llm_response.content,
                 })
-                yield {"type": "agent_end", "usage": total_usage}
+                # 累加当次用量到会话统计
+                self.session_usage.input += total_usage.input
+                self.session_usage.output += total_usage.output
+                yield {"type": "agent_end", "usage": total_usage, "session_usage": self.session_usage}
                 return
 
             # 有工具调用：构建 assistant 消息（含 tool_calls）并追加到消息列表
@@ -248,3 +252,4 @@ class Agent:
 
     def clear_conversation(self):
         self.conversation_history = []
+        self.session_usage = Usage()  # 重置会话统计

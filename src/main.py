@@ -15,6 +15,7 @@ Usage:
 Commands:
   /quit, /exit    Exit the agent
   /clear          Clear conversation history
+  /stats          Show session usage statistics
   /model <name>   Switch model mid-session
 """
 
@@ -83,6 +84,7 @@ Examples:
 Interactive Commands:
   /quit, /exit    Exit the agent
   /clear          Clear conversation history
+  /stats          Show session usage statistics
   /model <name>   Switch model mid-session
 
 For more information: https://github.com/linkxzhou/SimpleAgent
@@ -159,6 +161,17 @@ async def main():
             elif user_input == '/clear':
                 agent.clear_conversation()
                 print(f"{DIM}  (conversation cleared){RESET}\n")
+                print(f"{DIM}  (session stats reset){RESET}\n")
+                continue
+            elif user_input == '/stats':
+                # 显示会话统计
+                if agent.session_usage.input > 0 or agent.session_usage.output > 0:
+                    print(f"{DIM}  Session Stats:{RESET}")
+                    print(f"{DIM}    Input tokens:  {agent.session_usage.input}{RESET}")
+                    print(f"{DIM}    Output tokens: {agent.session_usage.output}{RESET}")
+                    print(f"{DIM}    Total tokens:  {agent.session_usage.input + agent.session_usage.output}{RESET}\n")
+                else:
+                    print(f"{DIM}  (no usage data yet){RESET}\n")
                 continue
             elif user_input.startswith('/model '):
                 new_model = user_input[7:].strip()
@@ -170,6 +183,7 @@ async def main():
             # 处理事件流
             in_text = False
             last_usage = None
+            last_session_usage = None
 
             async for event in agent.prompt(user_input):
                 if event["type"] == "tool_start":
@@ -226,6 +240,7 @@ async def main():
 
                 elif event["type"] == "agent_end":
                     last_usage = event["usage"]
+                    last_session_usage = event.get("session_usage")
 
                 elif event["type"] == "error":
                     print(f"{RED}Error: {event['message']}{RESET}")
@@ -234,7 +249,7 @@ async def main():
                 print()
 
             if last_usage:
-                print_usage(last_usage)
+                print_usage(last_usage, last_session_usage)
             print()
 
         except KeyboardInterrupt:

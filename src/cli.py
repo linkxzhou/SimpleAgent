@@ -22,10 +22,20 @@ def print_banner():
     print(f"{DIM}  Type /quit to exit, /clear to reset{RESET}\n")
 
 
-def print_usage(usage):
-    """打印 Token 使用统计"""
+def print_usage(usage, session_usage=None):
+    """打印 Token 使用统计
+    
+    Args:
+        usage: 当次交互的用量
+        session_usage: 会话累计用量（可选）
+    """
     if usage.input > 0 or usage.output > 0:
-        print(f"\n{DIM}  tokens: {usage.input} in / {usage.output} out{RESET}")
+        if session_usage and (session_usage.input > usage.input or session_usage.output > usage.output):
+            # 显示当次和会话累计
+            print(f"{DIM}  tokens: {usage.input} in / {usage.output} out  (session: {session_usage.input} in / {session_usage.output} out){RESET}")
+        else:
+            # 只显示当次（会话开始时的第一次交互）
+            print(f"{DIM}  tokens: {usage.input} in / {usage.output} out{RESET}")
 
 
 def truncate(s: str, max_len: int) -> str:
