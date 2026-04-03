@@ -47,7 +47,7 @@ class ToolExecutor:
                 content = f.read()
 
             if old_content not in content:
-                return {"success": False, "error": "Old content not found", "path": path}
+                return {"success": False, "error": "未找到旧内容", "path": path}
 
             # 只替换第一个匹配，避免全局替换导致的数据泄漏
             new_content_full = content.replace(old_content, new_content, 1)
@@ -82,7 +82,7 @@ class ToolExecutor:
         """列出目录内容"""
         try:
             if not os.path.exists(path):
-                return {"success": False, "error": "Path does not exist", "path": path}
+                return {"success": False, "error": "路径不存在", "path": path}
 
             items = []
             for item in os.listdir(path):
@@ -102,7 +102,7 @@ class ToolExecutor:
         """执行 shell 命令"""
         # 拒绝空命令或纯空白命令
         if not command or not command.strip():
-            return {"success": False, "error": "Command cannot be empty", "command": command}
+            return {"success": False, "error": "命令不能为空", "command": command}
 
         try:
             result = subprocess.run(
@@ -122,7 +122,7 @@ class ToolExecutor:
                 "command": command
             }
         except subprocess.TimeoutExpired:
-            return {"success": False, "error": "Command timed out", "command": command}
+            return {"success": False, "error": "命令执行超时", "command": command}
         except Exception as e:
             return {"success": False, "error": str(e), "command": command}
 

@@ -29,6 +29,8 @@ class Agent:
         self.tool_definitions = TOOL_DEFINITIONS
         self.session_usage = Usage()  # 会话累计 token 用量
         self.file_history: List[Dict[str, Any]] = []  # 文件操作历史（用于撤销）
+        self.tool_call_history: List[Dict[str, Any]] = []  # 工具调用历史（用于查看历史）
+        self.file_changes: List[Dict[str, Any]] = []  # 文件变更历史（用于查看变更）
         self.refresh_system_prompt()
 
     def refresh_system_prompt(self) -> 'Agent':
@@ -104,17 +106,40 @@ class Agent:
         elif name == "write_file":
             # 保存文件历史（用于撤销）
             self._save_file_history(args["path"])
-            return self.tools.write_file(args["path"], args["content"])
+            # 记录文件变更（用于查看变更）
+            import os
+            is_new_file = not os.path.exists(args["path"])
+            result = self.tools.write_file(args["path"], args["content"])
+            if result.get("success"):
+                self.file_changes.append({
+                    "path": args["path"],
+                    "operation": "write",
+                    "is_new": is_new_file,
+                    "size": len(args["content"]),
+                    "timestamp": __import__('time').time()
+                })
+            return result
         elif name == "edit_file":
             # 保存文件历史（用于撤销）
             if not args.get("preview", False):  # 预览模式不需要保存历史
                 self._save_file_history(args["path"])
-            return self.tools.edit_file(
+            result = self.tools.edit_file(
                 args["path"], 
                 args["old_content"], 
                 args["new_content"],
                 args.get("preview", False)
             )
+            # 记录文件变更（用于查看变更，非预览模式）
+            if result.get("success") and not args.get("preview", False):
+                diff_info = result.get("diff", {})
+                self.file_changes.append({
+                    "path": args["path"],
+                    "operation": "edit",
+                    "old_size": diff_info.get("old_length", 0),
+                    "new_size": diff_info.get("new_length", 0),
+                    "timestamp": __import__('time').time()
+                })
+            return result
         elif name == "list_files":
             return self.tools.list_files(args.get("path", "."))
         elif name == "execute_command":
@@ -295,6 +320,14 @@ class Agent:
                 result = self._execute_tool_call(tc)
                 result_str = json.dumps(result, ensure_ascii=False, default=str)
 
+                # 记录工具调用历史
+                self.tool_call_history.append({
+                    "tool_name": tc.name,
+                    "args": tc.arguments,
+                    "success": result.get("success", False),
+                    "timestamp": __import__('time').time()
+                })
+
                 # 通知前端工具执行完成
                 yield {"type": "tool_end", "tool_name": tc.name, "tool_call_id": tc.id, "result": result}
 
@@ -315,3 +348,5 @@ class Agent:
     def clear_conversation(self):
         self.conversation_history = []
         self.session_usage = Usage()  # 重置会话统计
+        self.tool_call_history = []  # 重置工具调用历史
+        self.file_changes = []  # 重置文件变更历史

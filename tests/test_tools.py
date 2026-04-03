@@ -103,7 +103,7 @@ class TestEditFile:
         try:
             result = ToolExecutor.edit_file(temp_path, "nonexistent", "new")
             assert result["success"] is False
-            assert "not found" in result["error"].lower()
+            assert "未找到" in result["error"]
         finally:
             os.unlink(temp_path)
 
@@ -121,13 +121,13 @@ class TestExecuteCommand:
         """测试执行空命令应被拒绝"""
         result = ToolExecutor.execute_command("")
         assert result["success"] is False
-        assert "empty" in result["error"].lower()
+        assert "不能为空" in result["error"]
 
     def test_execute_whitespace_command(self):
         """测试执行纯空白命令应被拒绝"""
         result = ToolExecutor.execute_command("   ")
         assert result["success"] is False
-        assert "empty" in result["error"].lower()
+        assert "不能为空" in result["error"]
 
     def test_execute_failing_command(self):
         """测试执行失败的命令"""

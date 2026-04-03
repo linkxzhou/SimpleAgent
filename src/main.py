@@ -18,6 +18,8 @@ Commands:
   /clear          Clear conversation history
   /stats          Show session usage statistics
   /undo           Undo last file change
+  /history        Show tool call history
+  /changes        Show file changes
   /model <name>   Switch model mid-session
 """
 
@@ -90,6 +92,8 @@ Interactive Commands:
   /clear          Clear conversation history
   /stats          Show session usage statistics
   /undo           Undo last file change
+  /history        Show tool call history
+  /changes        Show file changes
   /model <name>   Switch model mid-session
 
 For more information: https://github.com/linkxzhou/SimpleAgent
@@ -205,6 +209,67 @@ async def main():
                     print(f"{RED}  ✗ {result['error']}{RESET}")
                     if 'hint' in result:
                         print(f"{DIM}    {result['hint']}{RESET}\n")
+                continue
+            elif user_input == '/history':
+                # 显示工具调用历史
+                if not agent.tool_call_history:
+                    print(f"{DIM}  (no tool calls yet){RESET}\n")
+                else:
+                    print(f"{DIM}  Tool Call History ({len(agent.tool_call_history)} calls):{RESET}")
+                    for i, call in enumerate(agent.tool_call_history, 1):
+                        status = f"{GREEN}✓{RESET}" if call["success"] else f"{RED}✗{RESET}"
+                        tool_name = call["tool_name"]
+                        args = call["args"]
+                        
+                        # 生成简要描述
+                        if tool_name == "read_file":
+                            desc = f"read {args.get('path', '?')}"
+                        elif tool_name == "write_file":
+                            desc = f"write {args.get('path', '?')}"
+                        elif tool_name == "edit_file":
+                            desc = f"edit {args.get('path', '?')}"
+                        elif tool_name == "execute_command":
+                            cmd = args.get("command", "?")
+                            desc = f"$ {truncate(cmd, 60)}"
+                        elif tool_name == "list_files":
+                            desc = f"ls {args.get('path', '.')}"
+                        elif tool_name == "search_files":
+                            desc = f"search '{truncate(args.get('pattern', '?'), 40)}'"
+                        else:
+                            desc = tool_name
+                        
+                        print(f"{DIM}    {i}. {status} {desc}{RESET}")
+                    print()
+                continue
+            elif user_input == '/changes':
+                # 显示文件变更历史
+                if not agent.file_changes:
+                    print(f"{DIM}  (no file changes yet){RESET}\n")
+                else:
+                    print(f"{DIM}  File Changes ({len(agent.file_changes)} files):{RESET}")
+                    for i, change in enumerate(agent.file_changes, 1):
+                        path = change["path"]
+                        operation = change["operation"]
+                        
+                        # 生成变更描述
+                        if operation == "write":
+                            is_new = change.get("is_new", False)
+                            size = change.get("size", 0)
+                            if is_new:
+                                desc = f"write {path} (new file, {size} chars)"
+                            else:
+                                desc = f"write {path} ({size} chars)"
+                        elif operation == "edit":
+                            old_size = change.get("old_size", 0)
+                            new_size = change.get("new_size", 0)
+                            delta = new_size - old_size
+                            delta_str = f"+{delta}" if delta > 0 else str(delta)
+                            desc = f"edit {path} ({delta_str} chars)"
+                        else:
+                            desc = f"{operation} {path}"
+                        
+                        print(f"{DIM}    {i}. {desc}{RESET}")
+                    print()
                 continue
             elif user_input.startswith('/model '):
                 new_model = user_input[7:].strip()
