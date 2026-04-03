@@ -1,6 +1,8 @@
 """
 CLI 交互和显示模块
 """
+import os
+import subprocess
 import sys
 
 # ANSI color helpers
@@ -11,9 +13,26 @@ GREEN = "\x1b[32m"
 YELLOW = "\x1b[33m"
 CYAN = "\x1b[36m"
 RED = "\x1b[31m"
+MAGENTA = "\x1b[35m"
 
 # 默认模型名称
 DEFAULT_MODEL = 'Pro/zai-org/GLM-5'
+
+
+def get_git_branch():
+    """获取当前 Git 分支名，如果不在仓库中返回 None"""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=2
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return None
 
 
 def print_banner():

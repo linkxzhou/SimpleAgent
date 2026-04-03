@@ -37,6 +37,7 @@ from .cli import (
     print_usage,
     print_version,
     truncate,
+    get_git_branch,
     DEFAULT_MODEL,
     RESET,
     BOLD,
@@ -44,6 +45,7 @@ from .cli import (
     GREEN,
     YELLOW,
     RED,
+    MAGENTA,
 )
 
 
@@ -159,9 +161,17 @@ async def main():
         print(f"{DIM}  skills: {len(skills)} loaded{RESET}")
     print(f"{DIM}  cwd:   {os.getcwd()}{RESET}\n")
 
+    # 获取 Git 分支名
+    git_branch = get_git_branch()
+
     while True:
         try:
-            user_input = input(f"{BOLD}{GREEN}> {RESET}").strip()
+            # 构建提示符（显示 Git 分支）
+            prompt = f"{BOLD}{GREEN}> {RESET}"
+            if git_branch:
+                prompt = f"{BOLD}{MAGENTA}[{git_branch}]{RESET} {BOLD}{GREEN}> {RESET}"
+            
+            user_input = input(prompt).strip()
 
             if not user_input:
                 continue
