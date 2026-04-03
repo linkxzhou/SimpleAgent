@@ -29,6 +29,7 @@ from openai import OpenAI
 from .agent import Agent
 from .models import SkillSet
 from .tools import default_tools
+from .exceptions import classify_exception, format_error_message, SystemError
 from .cli import (
     print_banner,
     print_usage,
@@ -241,6 +242,20 @@ async def main():
             break
         except EOFError:
             break
+        except SystemError as e:
+            # 不可恢复的系统错误，需要退出
+            print(format_error_message(e))
+            print(f"{DIM}  正在退出...{RESET}\n")
+            break
+        except Exception as e:
+            # 所有其他异常：分类、显示错误信息、继续会话
+            classified_error = classify_exception(e)
+            print(format_error_message(classified_error))
+            
+            # 如果是不可恢复错误，退出会话
+            if not classified_error.recoverable:
+                print(f"{DIM}  正在退出...{RESET}\n")
+                break
 
     print(f"\n{DIM}  bye 👋{RESET}\n")
 

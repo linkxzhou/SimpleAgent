@@ -85,7 +85,7 @@ if [ -n "$TIMEOUT_CMD" ]; then
     TIMEOUT_PREFIX="$TIMEOUT_CMD $TIMEOUT"
 fi
 
-$TIMEOUT_PREFIX python3 src/main.py \
+$TIMEOUT_PREFIX python3 -m src.main \
     --model "$MODEL" \
     <<PROMPT || true
 当前是第 ${HOUR} 小时（${DATE}）。
