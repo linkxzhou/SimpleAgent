@@ -257,7 +257,13 @@ async def main():
                     status = f"{GREEN}✓{RESET}" if success else f"{RED}✗{RESET}"
                     
                     # 显示工具完成状态
-                    print(f"{DIM}    {status} {tool_name} done{RESET}")
+                    if success:
+                        print(f"{DIM}    {status} {tool_name} done{RESET}")
+                    else:
+                        # 失败时显示错误信息摘要
+                        error_msg = result.get("error", "Unknown error")
+                        error_summary = truncate(error_msg, 80)
+                        print(f"{DIM}    {status} {tool_name} failed: {error_summary}{RESET}")
                     
                     # 如果是 edit_file 且有 diff 信息，显示变更摘要
                     if tool_name == "edit_file" and success and "diff" in result:
