@@ -1,5 +1,3 @@
-"""
-SimpleAgent - a coding agent that evolves itself.
-"""
+# SimpleAgent core package
 
-__version__ = "0.1.0"
+__version__ = "0.71.0"

@@ -2,3 +2,6 @@ openai>=1.0.0
 argparse
 asyncio
 dataclasses
+ddgs>=4.0.0
+mcp>=1.0.0
+pytest-asyncio>=1.0.0

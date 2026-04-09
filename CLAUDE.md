@@ -10,7 +10,7 @@
 当前项目的一个重要方向是：**优化整个提示词系统，而不是只修改单条 system prompt。**
 提示词体系由以下几层组成：
 
-1. **运行时 system prompt**：由 `src/main.py` 动态生成
+1. **运行时 system prompt**：由 `src/prompt.py` 动态生成
 2. **身份层**：`IDENTITY.md`
 3. **仓库工作说明层**：本文件 `CLAUDE.md`
 4. **技能层**：`skills/*/SKILL.md`
@@ -18,14 +18,27 @@
 
 ## 当前架构
 
-### 1. 运行入口
+### 1. 运行入口与模块结构
 
-- `main.py`：主入口包装
-- `src/main.py`：核心 Agent 实现
+- `main.py`：项目根目录入口脚本，直接运行 Agent
+- `src/main.py`：包内入口，汇总导出所有模块符号，保持向后兼容
+- `src/colors.py`：ANSI 终端颜色常量
+- `src/models.py`：数据类（`ToolCallRequest`、`Usage`）
+- `src/tools.py`：`ToolExecutor` 工具执行器 + `TOOL_DEFINITIONS` 工具定义
+- `src/skills.py`：`Skill` / `SkillSet` 技能加载与管理
+- `src/prompt.py`：提示词上下文渲染与 `build_system_prompt()` 动态构建
+- `src/git.py`：Git 感知（分支检测、仓库状态）
+- `src/providers.py`：`ProviderConfig` 提供商配置数据类 + 内置提供商注册表 + `resolve_provider()` 配置合并
+- `src/logger.py`：`SessionLogger` 会话日志记录（JSONL 格式交互历史）
+- `src/mcp_client.py`：`MCPClient` MCP 客户端（stdio transport 连接、工具发现、OpenAI 格式转换、代理调用）
+- `src/memory.py`：`MemoryManager` 三层记忆管理（短期/中期 WorkingSummary/长期 Archival，Anchored Iterative Summarization）
+- `src/router.py`：`ModelRouter` LLM 路由器（三级模型选择：HIGH/MIDDLE/LOW，基于任务复杂度自动路由）
+- `src/agent.py`：`Agent` 核心类（对话循环、工具调用分发、LLM 交互、会话持久化、路由集成）
+- `src/cli.py`：CLI / REPL 交互界面（参数解析、事件渲染、路由状态显示、`main()`）
 
 ### 2. Prompt 装配逻辑
 
-`src/main.py` 中会在运行时动态构建 system prompt，自动整合：
+`src/prompt.py` 中会在运行时动态构建 system prompt，自动整合：
 - 当前项目目录
 - 操作系统 / Shell / Python 版本
 - 仓库中的关键文档
@@ -45,6 +58,7 @@
 - `list_files`
 - `execute_command`
 - `search_files`
+- `web_search`（使用 DuckDuckGo 搜索网络内容，无需 API Key）
 
 Agent 会执行如下循环：
 1. 发送用户消息与 system prompt
@@ -66,6 +80,8 @@ Agent 会执行如下循环：
 - `self-assess`：自我评估
 - `evolve`：安全演进
 - `communicate`：日志与 issue 回复
+- `last30days`：研究最近 30 天的前沿趋势（Reddit + X + Web）
+- `code-simplifier`：代码简化与重构
 
 ## 构建与验证命令
 
@@ -86,7 +102,7 @@ python -m black .
 ```bash
 source .env
 python main.py
-python main.py --model Pro/zai-org/GLM-5 --skills ./skills
+python main.py --model DeepSeek-V3_2-Online-32k --skills ./skills
 ```
 
 ## 进化循环
@@ -121,7 +137,7 @@ source .env
 - 尽量做最小、清晰、可验证的改动
 - 优先修改现有文件，而不是无关扩张
 - 当提示词相关文件发生变化时，要检查以下内容是否仍一致：
-  - `src/main.py` 中的 `build_system_prompt()`
+  - `src/prompt.py` 中的 `build_system_prompt()`
   - `IDENTITY.md`
   - `CLAUDE.md`
   - `skills/*/SKILL.md`
@@ -129,7 +145,7 @@ source .env
 ## 当前演进重点
 
 根据 `ISSUES_TODAY.md` 与 `ROADMAP.md`，当前重点包括：
-- 提升提示词质量和一致性
-- 将单文件逻辑逐步按职责拆分
-- 提升验证、恢复和错误处理能力
+- 级别 4 全部完成 ✅，进入终极挑战阶段
+- 终极挑战：SWE-bench Lite、Terminal-bench、单提示词构建完整项目、重构真实开源项目
+- 持续提升端到端可靠性和长对话稳定性
 - 让 Agent 更像真实可用的开发工具，而不是演示脚本

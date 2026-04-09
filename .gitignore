@@ -1,7 +1,12 @@
 .DS_Store
 /target
+Cargo.lock
 ISSUES_TODAY.md
 ISSUE_RESPONSE.md
 /tmp/
 **/__pycache__
 **/.env
+**/.pytest_cache
+/sessions/
+/todo_api/
+/.memory/

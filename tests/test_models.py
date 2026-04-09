@@ -1,81 +1,66 @@
-"""
-测试 models 模块
-"""
+"""tests/test_models.py — ToolCallRequest、Usage 数据类测试"""
 
-import os
-import tempfile
-from src.models import SkillSet
+import json
+from src.models import ToolCallRequest, Usage
 
 
-class TestSkillSet:
-    """测试 SkillSet 功能"""
+class TestToolCallRequest:
+    def test_basic_creation(self):
+        tc = ToolCallRequest(id="call_1", name="read_file", arguments={"path": "foo.txt"})
+        assert tc.id == "call_1"
+        assert tc.name == "read_file"
+        assert tc.arguments == {"path": "foo.txt"}
 
-    def test_empty_skillset(self):
-        """测试空的技能集"""
-        skills = SkillSet()
-        assert skills.is_empty() is True
-        assert len(skills) == 0
+    def test_to_openai_tool_call(self):
+        tc = ToolCallRequest(id="call_2", name="write_file", arguments={"path": "a.txt", "content": "hello"})
+        result = tc.to_openai_tool_call()
+        assert result["id"] == "call_2"
+        assert result["type"] == "function"
+        assert result["function"]["name"] == "write_file"
+        # arguments 应被序列化为 JSON 字符串
+        args = json.loads(result["function"]["arguments"])
+        assert args["path"] == "a.txt"
+        assert args["content"] == "hello"
 
-    def test_load_skills_from_directory(self):
-        """测试从目录加载技能"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # 创建一个技能目录
-            skill_dir = os.path.join(tmpdir, "test_skill")
-            os.makedirs(skill_dir)
-            
-            # 创建 SKILL.md 文件
-            skill_file = os.path.join(skill_dir, "SKILL.md")
-            with open(skill_file, 'w') as f:
-                f.write("# Test Skill\n\nThis is a test skill.")
+    def test_to_openai_tool_call_no_provider_fields(self):
+        tc = ToolCallRequest(id="call_3", name="list_files", arguments={})
+        result = tc.to_openai_tool_call()
+        assert "provider_specific_fields" not in result
+        assert "provider_specific_fields" not in result["function"]
 
-            skills = SkillSet()
-            skills.load([tmpdir])
+    def test_to_openai_tool_call_with_provider_fields(self):
+        tc = ToolCallRequest(
+            id="call_4",
+            name="read_file",
+            arguments={"path": "x"},
+            provider_specific_fields={"extra": True},
+            function_provider_specific_fields={"fn_extra": 42},
+        )
+        result = tc.to_openai_tool_call()
+        assert result["provider_specific_fields"] == {"extra": True}
+        assert result["function"]["provider_specific_fields"] == {"fn_extra": 42}
 
-            assert skills.is_empty() is False
-            assert len(skills) == 1
+    def test_arguments_unicode(self):
+        tc = ToolCallRequest(id="call_5", name="write_file", arguments={"path": "中文.txt", "content": "你好"})
+        result = tc.to_openai_tool_call()
+        args = json.loads(result["function"]["arguments"])
+        assert args["content"] == "你好"
 
-    def test_skill_content(self):
-        """测试技能内容"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            skill_dir = os.path.join(tmpdir, "demo")
-            os.makedirs(skill_dir)
-            
-            skill_file = os.path.join(skill_dir, "SKILL.md")
-            test_content = "# Demo Skill\nDemo content."
-            with open(skill_file, 'w') as f:
-                f.write(test_content)
 
-            skills = SkillSet()
-            skills.load([tmpdir])
+class TestUsage:
+    def test_defaults(self):
+        u = Usage()
+        assert u.input == 0
+        assert u.output == 0
 
-            # 获取技能内容
-            content = skills.to_prompt_text()
-            assert "Demo Skill" in content
-            assert "Demo content" in content
+    def test_custom_values(self):
+        u = Usage(input=100, output=50)
+        assert u.input == 100
+        assert u.output == 50
 
-    def test_load_multiple_skills(self):
-        """测试加载多个技能"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # 创建第一个技能
-            skill1_dir = os.path.join(tmpdir, "skill1")
-            os.makedirs(skill1_dir)
-            with open(os.path.join(skill1_dir, "SKILL.md"), 'w') as f:
-                f.write("# Skill 1")
-
-            # 创建第二个技能
-            skill2_dir = os.path.join(tmpdir, "skill2")
-            os.makedirs(skill2_dir)
-            with open(os.path.join(skill2_dir, "SKILL.md"), 'w') as f:
-                f.write("# Skill 2")
-
-            skills = SkillSet()
-            skills.load([tmpdir])
-
-            assert len(skills) == 2
-
-    def test_nonexistent_skill_directory(self):
-        """测试加载不存在的技能目录"""
-        skills = SkillSet()
-        # 不应抛出异常
-        skills.load(["/nonexistent/path"])
-        assert skills.is_empty() is True
+    def test_mutable(self):
+        u = Usage()
+        u.input += 10
+        u.output += 5
+        assert u.input == 10
+        assert u.output == 5

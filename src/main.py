@@ -5,400 +5,78 @@ SimpleAgent — a coding agent that evolves itself.
 Started as a Rust project. Now converted to Python without external agent frameworks.
 
 Usage:
-  python src/main.py
-  OPENAI_BASE_URL=https://api.siliconflow.cn/v1 python src/main.py
-  OPENAI_MODEL=Pro/zai-org/GLM-5 python src/main.py
-  python src/main.py --model Pro/zai-org/GLM-5
-  python src/main.py --skills ./skills
-  python src/main.py --system "Custom system prompt"
-  python src/main.py --version
+  python main.py
+  python main.py --model DeepSeek-V3_2-Online-32k
+  python main.py --provider deepseek
+  python main.py --provider groq --model llama-3.3-70b-versatile
+  python main.py --skills ./skills
+  python main.py --system "请专注于安全性"
+  python main.py --system ./my_prompt.txt
+  python -m src.main
 
 Commands:
-  /quit, /exit    Exit the agent
-  /clear          Clear conversation history
-  /stats          Show session usage statistics
-  /undo           Undo last file change
-  /history        Show tool call history
-  /changes        Show file changes
-  /model <name>   Switch model mid-session
+  /help              Show available commands
+  /quit, /exit       Exit the agent
+  /clear             Clear conversation history
+  /model <name>      Switch model mid-session
+  /usage             Show session token stats
+  /compact           Summarize old messages and free context space
+  /undo              Revert last file change
+  /diff              Show git diff of all session changes
+  /commit [msg]      Git commit modified files
+  /save [name]       Save session to file
+  /load <name>       Load session from file
+  /replay <logfile>  Re-execute user inputs from a JSONL session log
+  /spec <specfile>   Generate implementation plan from a spec file
+  \"\"\" or '''         Enter multi-line input mode (paste code blocks)
 """
 
-import os
-import sys
 import asyncio
-import argparse
-from dotenv import load_dotenv
 
-from openai import OpenAI
-
+# 使用相对导入，与包内其他模块保持一致
+from .colors import RESET, BOLD, DIM, GREEN, YELLOW, CYAN, RED
+from .models import ToolCallRequest, Usage
+from .tools import ToolExecutor, TOOL_DEFINITIONS, default_tools
+from .skills import Skill, SkillSet
+from .prompt import (
+    PROMPT_CONTEXT_FILES,
+    read_prompt_file,
+    render_prompt_context,
+    build_system_prompt,
+    check_context_truncation,
+    detect_project_info,
+    emit_truncation_warnings,
+)
 from .agent import Agent
-from .models import SkillSet
-from .tools import default_tools
-from .exceptions import classify_exception, format_error_message, SystemError
+from .git import is_git_repo, get_git_branch, get_git_status_summary, git_add_and_commit, git_diff_files
+from .providers import ProviderConfig, PROVIDERS, get_provider, list_providers, resolve_provider
+from .logger import SessionLogger, DEFAULT_LOG_DIR, load_transcript
+from .mcp_client import MCPClient, parse_mcp_arg
+from .memory import MemoryManager, WorkingSummary, ArchivalEntry
+from .router import ModelRouter, RouterConfig, TaskComplexity, classify_complexity
 from .cli import (
+    DEFAULT_MODEL,
+    SESSIONS_DIR,
+    LOGS_DIR,
+    MarkdownRenderer,
+    format_diff_lines,
+    format_elapsed,
+    match_command,
     print_banner,
     print_usage,
-    print_version,
     truncate,
-    get_git_branch,
-    DEFAULT_MODEL,
-    RESET,
-    BOLD,
-    DIM,
-    GREEN,
-    YELLOW,
-    RED,
-    MAGENTA,
+    read_user_input,
+    load_system_prompt,
+    parse_args,
+    resolve_model_for_provider,
+    handle_slash_command,
+    render_event,
+    main,
+    run,
 )
 
-
-def parse_args():
-    """解析命令行参数"""
-    default_model = os.environ.get('OPENAI_MODEL', DEFAULT_MODEL)
-
-    parser = argparse.ArgumentParser(
-        description='SimpleAgent - A coding agent that evolves itself.',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog='''
-Usage:
-  python main.py                              # Run with default settings
-
-Environment Variables:
-  OPENAI_API_KEY        Your OpenAI API key (required)
-  OPENAI_BASE_URL       Custom API endpoint (optional)
-  OPENAI_MODEL          Default model to use (optional)
-
-Examples:
-  OPENAI_API_KEY=sk-xxx python main.py
-    Run with API key from environment variable
-
-  OPENAI_BASE_URL=https://api.siliconflow.cn/v1 python main.py
-    Run with custom API endpoint
-
-  OPENAI_MODEL=Pro/zai-org/GLM-5 python main.py
-    Run with specific model from environment
-
-  python main.py --model Pro/zai-org/GLM-5
-    Run with specific model (overrides env)
-
-  python main.py --skills ./skills
-    Load skills from directory
-
-  python main.py --version
-    Show version information
-
-Interactive Commands:
-  /quit, /exit    Exit the agent
-  /clear          Clear conversation history
-  /stats          Show session usage statistics
-  /undo           Undo last file change
-  /history        Show tool call history
-  /changes        Show file changes
-  /model <name>   Switch model mid-session
-
-For more information: https://github.com/linkxzhou/SimpleAgent
-        '''
-    )
-
-    parser.add_argument(
-        '--model',
-        default=default_model,
-        metavar='NAME',
-        help='Model to use (default: %(default)s, env: OPENAI_MODEL)'
-    )
-    parser.add_argument(
-        '--skills',
-        nargs='+',
-        metavar='DIR',
-        help='Skill directories to load'
-    )
-    parser.add_argument(
-        '--version',
-        action='store_true',
-        help='Show version and exit'
-    )
-    parser.add_argument(
-        '--system',
-        metavar='PROMPT',
-        help='Custom system prompt (overrides default)'
-    )
-
-    return parser.parse_args()
-
-
-async def main():
-    """主入口函数"""
-    # 加载 .env 文件中的环境变量
-    load_dotenv()
-
-    args = parse_args()
-
-    # 处理 --version 参数
-    if args.version:
-        print_version()
-        sys.exit(0)
-
-    api_key = os.environ.get('OPENAI_API_KEY') or os.environ.get('API_KEY')
-    if not api_key:
-        print("Error: Set OPENAI_API_KEY or API_KEY environment variable")
-        sys.exit(1)
-
-    base_url = os.environ.get('OPENAI_BASE_URL')
-    if not args.model or len(args.model) <= 0:
-        args.model = os.environ.get('OPENAI_MODEL', DEFAULT_MODEL)
-
-    skills = SkillSet()
-    if args.skills:
-        skills.load(args.skills)
-
-    agent = Agent(api_key, args.model, base_url=base_url)
-    agent.with_skills(skills)
-    agent.with_tools(default_tools())
-    
-    # 应用自定义系统提示词
-    if args.system:
-        agent.with_system_prompt(args.system)
-
-    print_banner()
-    print(f"{DIM}  model: {args.model}{RESET}")
-    if base_url:
-        print(f"{DIM}  base_url: {base_url}{RESET}")
-    if not skills.is_empty():
-        print(f"{DIM}  skills: {len(skills)} loaded{RESET}")
-    print(f"{DIM}  cwd:   {os.getcwd()}{RESET}\n")
-
-    # 获取 Git 分支名
-    git_branch = get_git_branch()
-
-    while True:
-        try:
-            # 构建提示符（显示 Git 分支）
-            prompt = f"{BOLD}{GREEN}> {RESET}"
-            if git_branch:
-                prompt = f"{BOLD}{MAGENTA}[{git_branch}]{RESET} {BOLD}{GREEN}> {RESET}"
-            
-            user_input = input(prompt).strip()
-
-            if not user_input:
-                continue
-
-            if user_input in ['/quit', '/exit']:
-                break
-            elif user_input == '/clear':
-                agent.clear_conversation()
-                print(f"{DIM}  (conversation cleared){RESET}\n")
-                print(f"{DIM}  (session stats reset){RESET}\n")
-                continue
-            elif user_input == '/stats':
-                # 显示会话统计
-                if agent.session_usage.input > 0 or agent.session_usage.output > 0:
-                    print(f"{DIM}  Session Stats:{RESET}")
-                    print(f"{DIM}    Input tokens:  {agent.session_usage.input}{RESET}")
-                    print(f"{DIM}    Output tokens: {agent.session_usage.output}{RESET}")
-                    print(f"{DIM}    Total tokens:  {agent.session_usage.input + agent.session_usage.output}{RESET}\n")
-                else:
-                    print(f"{DIM}  (no usage data yet){RESET}\n")
-                continue
-            elif user_input == '/undo':
-                # 撤销上一次文件更改
-                result = agent.undo_last_file_change()
-                if result["success"]:
-                    print(f"{GREEN}  ✓ {result['message']}{RESET}")
-                    print(f"{DIM}    Restored {result['restored_size']} chars{RESET}\n")
-                else:
-                    print(f"{RED}  ✗ {result['error']}{RESET}")
-                    if 'hint' in result:
-                        print(f"{DIM}    {result['hint']}{RESET}\n")
-                continue
-            elif user_input == '/history':
-                # 显示工具调用历史
-                if not agent.tool_call_history:
-                    print(f"{DIM}  (no tool calls yet){RESET}\n")
-                else:
-                    print(f"{DIM}  Tool Call History ({len(agent.tool_call_history)} calls):{RESET}")
-                    for i, call in enumerate(agent.tool_call_history, 1):
-                        status = f"{GREEN}✓{RESET}" if call["success"] else f"{RED}✗{RESET}"
-                        tool_name = call["tool_name"]
-                        args = call["args"]
-                        
-                        # 生成简要描述
-                        if tool_name == "read_file":
-                            desc = f"read {args.get('path', '?')}"
-                        elif tool_name == "write_file":
-                            desc = f"write {args.get('path', '?')}"
-                        elif tool_name == "edit_file":
-                            desc = f"edit {args.get('path', '?')}"
-                        elif tool_name == "execute_command":
-                            cmd = args.get("command", "?")
-                            desc = f"$ {truncate(cmd, 60)}"
-                        elif tool_name == "list_files":
-                            desc = f"ls {args.get('path', '.')}"
-                        elif tool_name == "search_files":
-                            desc = f"search '{truncate(args.get('pattern', '?'), 40)}'"
-                        else:
-                            desc = tool_name
-                        
-                        print(f"{DIM}    {i}. {status} {desc}{RESET}")
-                    print()
-                continue
-            elif user_input == '/changes':
-                # 显示文件变更历史
-                if not agent.file_changes:
-                    print(f"{DIM}  (no file changes yet){RESET}\n")
-                else:
-                    print(f"{DIM}  File Changes ({len(agent.file_changes)} files):{RESET}")
-                    for i, change in enumerate(agent.file_changes, 1):
-                        path = change["path"]
-                        operation = change["operation"]
-                        
-                        # 生成变更描述
-                        if operation == "write":
-                            is_new = change.get("is_new", False)
-                            size = change.get("size", 0)
-                            if is_new:
-                                desc = f"write {path} (new file, {size} chars)"
-                            else:
-                                desc = f"write {path} ({size} chars)"
-                        elif operation == "edit":
-                            old_size = change.get("old_size", 0)
-                            new_size = change.get("new_size", 0)
-                            delta = new_size - old_size
-                            delta_str = f"+{delta}" if delta > 0 else str(delta)
-                            desc = f"edit {path} ({delta_str} chars)"
-                        else:
-                            desc = f"{operation} {path}"
-                        
-                        print(f"{DIM}    {i}. {desc}{RESET}")
-                    print()
-                continue
-            elif user_input.startswith('/model '):
-                new_model = user_input[7:].strip()
-                agent.with_model(new_model)
-                agent.clear_conversation()
-                print(f"{DIM}  (switched to {new_model}, conversation cleared){RESET}\n")
-                continue
-
-            # 处理事件流
-            in_text = False
-            last_usage = None
-            last_session_usage = None
-
-            async for event in agent.prompt(user_input):
-                if event["type"] == "tool_start":
-                    if in_text:
-                        print()
-                        in_text = False
-                    tool_name = event["tool_name"]
-                    tool_args = event["args"]
-
-                    if tool_name == "execute_command":
-                        cmd = tool_args.get("command", "...")
-                        summary = f"$ {truncate(cmd, 80)}"
-                    elif tool_name == "read_file":
-                        path = tool_args.get("path", "?")
-                        summary = f"read {path}"
-                    elif tool_name == "write_file":
-                        path = tool_args.get("path", "?")
-                        summary = f"write {path}"
-                    elif tool_name == "edit_file":
-                        path = tool_args.get("path", "?")
-                        summary = f"edit {path}"
-                    elif tool_name == "list_files":
-                        path = tool_args.get("path", ".")
-                        summary = f"ls {path}"
-                    elif tool_name == "search_files":
-                        pattern = tool_args.get("pattern", "?")
-                        summary = f"search '{truncate(pattern, 60)}'"
-                    else:
-                        summary = tool_name
-
-                    print(f"{YELLOW}  ▶ {summary}{RESET}")
-                    sys.stdout.flush()
-
-                elif event["type"] == "tool_end":
-                    tool_name = event["tool_name"]
-                    result = event["result"]
-                    success = result.get("success", False)
-                    status = f"{GREEN}✓{RESET}" if success else f"{RED}✗{RESET}"
-                    
-                    # 显示工具完成状态
-                    if success:
-                        print(f"{DIM}    {status} {tool_name} done{RESET}")
-                    else:
-                        # 失败时显示错误信息摘要
-                        error_msg = result.get("error", "Unknown error")
-                        error_summary = truncate(error_msg, 80)
-                        print(f"{DIM}    {status} {tool_name} failed: {error_summary}{RESET}")
-                    
-                    # 如果是 edit_file 且有 diff 信息，显示变更摘要
-                    if tool_name == "edit_file" and success and "diff" in result:
-                        diff_info = result["diff"]
-                        old_len = diff_info.get("old_length", 0)
-                        new_len = diff_info.get("new_length", 0)
-                        
-                        # 显示变更统计
-                        if old_len != new_len:
-                            delta = new_len - old_len
-                            delta_str = f"+{delta}" if delta > 0 else str(delta)
-                            print(f"{DIM}    📝 {old_len} → {new_len} chars ({delta_str}){RESET}")
-                        else:
-                            print(f"{DIM}    📝 {old_len} chars (no size change){RESET}")
-                        
-                        # 如果是预览模式，显示提示
-                        if result.get("preview"):
-                            print(f"{YELLOW}    ⚠ PREVIEW MODE - File not modified{RESET}")
-                    
-                    sys.stdout.flush()
-
-                elif event["type"] == "reasoning":
-                    if in_text:
-                        print()
-                    print(f"{DIM}  💭 {truncate(event['content'], 200)}{RESET}")
-                    in_text = False
-
-                elif event["type"] == "text_update":
-                    if not in_text:
-                        print()
-                        in_text = True
-                    print(event["delta"], end="")
-                    sys.stdout.flush()
-
-                elif event["type"] == "agent_end":
-                    last_usage = event["usage"]
-                    last_session_usage = event.get("session_usage")
-
-                elif event["type"] == "error":
-                    print(f"{RED}Error: {event['message']}{RESET}")
-
-            if in_text:
-                print()
-
-            if last_usage:
-                print_usage(last_usage, last_session_usage)
-            print()
-
-        except KeyboardInterrupt:
-            print("\n")
-            break
-        except EOFError:
-            break
-        except SystemError as e:
-            # 不可恢复的系统错误，需要退出
-            print(format_error_message(e))
-            print(f"{DIM}  正在退出...{RESET}\n")
-            break
-        except Exception as e:
-            # 所有其他异常：分类、显示错误信息、继续会话
-            classified_error = classify_exception(e)
-            print(format_error_message(classified_error))
-            
-            # 如果是不可恢复错误，退出会话
-            if not classified_error.recoverable:
-                print(f"{DIM}  正在退出...{RESET}\n")
-                break
-
-    print(f"\n{DIM}  bye 👋{RESET}\n")
-
+# 保留模块级 SYSTEM_PROMPT 以兼容外部引用
+SYSTEM_PROMPT = build_system_prompt()
 
 if __name__ == "__main__":
     asyncio.run(main())
